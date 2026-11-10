@@ -1,0 +1,66 @@
+# fly.read.toml — Goodfor READ plane (competitor intelligence + analysis)
+#
+# Plane: READ. Carries CONTRACT risk (all competitor data is purchased from
+# EnsembleData/ScrapeCreators; TikTok's Research API is closed to us). This app
+# is assumed DISPOSABLE: a scraping complaint may force it to be rebuilt behind
+# a vendor/IP swap. It must therefore share NOTHING with the write plane — a
+# separate Fly app = separate machines, separate secret vault, separate egress
+# IP. The read-plane boot guard (apps/worker-read/src/tick.ts → assertReadPlane)
+# HARD-FAILS at boot if TIKTOK_CLIENT_SECRET or TOKEN_ENCRYPTION_KEY are present.
+#
+# Houses worker-read (poll, trends) AND worker-analyse (analyse, refit,
+# poll-batch) as process groups in ONE read-plane app — read-plane workers stay
+# together, never mixed with write-plane workers. worker-analyse needs a Python
+# 3.12 sidecar + ffmpeg, both baked into deploy/Dockerfile.read.
+#
+# Deploy from the REPO ROOT:
+#   fly deploy --config deploy/fly/fly.read.toml
+#
+# Secrets (docs/DEPLOY.md §2): ENSEMBLEDATA_TOKEN, SCRAPECREATORS_API_KEY,
+#   GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, REDIS_URL, SUPABASE_URL,
+#   SUPABASE_SERVICE_ROLE_KEY.  NEVER set TIKTOK_* / TOKEN_ENCRYPTION_KEY here.
+
+app            = "goodfor-signal-read"
+primary_region = "iad"
+
+# Loops trap SIGINT ("Ctrl-C to stop") — give them time to finish the in-flight
+# tick and release the vendor token bucket before the machine dies.
+kill_signal  = "SIGINT"
+kill_timeout = "30s"
+
+[build]
+  # Built by the parallel Dockerfile task. MUST include Python 3.11/3.12 +
+  # scripts/analysis/requirements.txt (numpy, umap-learn, hdbscan, joblib,
+  # pdqhash) and ffmpeg on PATH — worker-analyse shells out to both.
+  # read-plane app runs poll/trends AND analyse — use the Python-superset image
+  dockerfile = "deploy/Dockerfile.analyse"
+
+[env]
+  NODE_ENV = "production"
+  # Python interpreter baked into deploy/Dockerfile.read. The clustering + vpdq
+  # providers read PYTHON_BIN (default 'python3'); point it at the venv that has
+  # the ML wheels installed.
+  PYTHON_BIN = "/opt/venv/bin/python"
+
+# Process groups. poll/trends/analyse are always-on loops (count=1). The
+# refit/poll-batch groups are ONE-SHOT jobs that exit 0 — they must be run as
+# SCHEDULED machines (scaled to 0 always-on), never left as restart-looping
+# daemons. See docs/DEPLOY.md §6 for the exact scale + schedule commands.
+[processes]
+  poll          = "npm run poll"            # 60s due_at drain — EXACTLY ONE instance
+  trends        = "npm run trends"          # 5-min keyword/hashtag trend loop
+  analyse       = "npm run analyse"         # 60s analysis_queue drain (ASR/vision/embed/cluster)
+  analyse-refit = "npm run analyse:refit"   # WEEKLY BERTopic re-fit — scheduled one-shot
+  analyse-batch = "npm run analyse:poll-batch" # reconcile Gemini Batch jobs — scheduled one-shot
+
+# Light network-bound loops.
+[[vm]]
+  size      = "shared-cpu-1x"
+  memory    = "512mb"
+  processes = ["poll", "trends"]
+
+# Heavy: ffmpeg keyframe/audio extraction + numba (UMAP/HDBSCAN) + embeddings.
+[[vm]]
+  size      = "performance-2x"
+  memory    = "4gb"
+  processes = ["analyse", "analyse-refit", "analyse-batch"]

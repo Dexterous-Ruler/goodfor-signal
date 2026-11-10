@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1
+# ─────────────────────────────────────────────────────────────────────────────
+# Dashboard image — Next.js 15 read-only console (@goodfor/dashboard).
+# Unlike the workers this DOES have a build step: `next build` then `next start`.
+#
+# The Next config uses transpilePackages (@goodfor/db, @goodfor/scoring) and
+# experimental.externalDir, so the whole monorepo must be present at build time
+# (the workspace packages ship raw TypeScript and live above apps/dashboard).
+# next.config.mjs does NOT set output:'standalone', so we ship node_modules and
+# run `next start` against the .next build output.
+#
+# BUILD CONTEXT = REPO ROOT:
+#   docker build -f deploy/Dockerfile.dashboard -t goodfor/dashboard .
+#
+# NOTE: this relies on a `start` script in apps/dashboard/package.json. It is
+# already present ("start": "next start -p 3000") — no package.json edit needed.
+# If it were ever removed, add it back or change the CMD to
+#   ["npx", "next", "start", "apps/dashboard", "-p", "3000"].
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:22-slim
+
+WORKDIR /app
+
+# ── Dependency layer (cache-friendly) ──────────────────────────────────────
+# devDependencies (typescript, @types/react) are required by `next build`, so
+# install the full dependency set (do NOT set NODE_ENV=production before this).
+COPY package.json package-lock.json ./
+COPY apps/dashboard/package.json        ./apps/dashboard/
+COPY apps/worker-analyse/package.json   ./apps/worker-analyse/
+COPY apps/worker-attribute/package.json ./apps/worker-attribute/
+COPY apps/worker-creators/package.json  ./apps/worker-creators/
+COPY apps/worker-read/package.json      ./apps/worker-read/
+COPY apps/worker-write/package.json     ./apps/worker-write/
+COPY packages/asr/package.json          ./packages/asr/
+COPY packages/attribution/package.json  ./packages/attribution/
+COPY packages/briefs/package.json       ./packages/briefs/
+COPY packages/clustering/package.json   ./packages/clustering/
+COPY packages/compliance/package.json   ./packages/compliance/
+COPY packages/contracts/package.json    ./packages/contracts/
+COPY packages/creator-crm/package.json  ./packages/creator-crm/
+COPY packages/db/package.json           ./packages/db/
+COPY packages/embeddings/package.json   ./packages/embeddings/
+COPY packages/media/package.json        ./packages/media/
+COPY packages/publishing/package.json   ./packages/publishing/
+COPY packages/scoring/package.json      ./packages/scoring/
+COPY packages/tiktok-source/package.json ./packages/tiktok-source/
+COPY packages/vision/package.json       ./packages/vision/
+
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+# ── Build layer ─────────────────────────────────────────────────────────────
+# Copy the full monorepo (externalDir/transpilePackages need the sibling
+# packages' TS sources) and produce the Next.js production build.
+COPY . .
+RUN npm run build --workspace @goodfor/dashboard
+
+# Runtime is production; dev deps are already installed above so this does not
+# strip anything `next start` needs.
+ENV NODE_ENV=production
+ENV PORT=3000
+EXPOSE 3000
+
+CMD ["npm", "run", "start", "--workspace", "@goodfor/dashboard"]

@@ -1,0 +1,39 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Runtime / local data
+.trigger/
+.vercel/
+*.log
+tmp/
+scratch/
+
+# Media cache — keyframes and audio extracted for analysis
+media-cache/
+*.mp4
+*.wav
+*.m4a
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python sidecar venv
+scripts/analysis/.venv/

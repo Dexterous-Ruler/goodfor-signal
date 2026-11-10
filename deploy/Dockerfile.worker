@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+# ─────────────────────────────────────────────────────────────────────────────
+# Base image for the tsx workers (worker-read, worker-write, worker-attribute,
+# worker-creators). No build step — tsx runs the TypeScript sources directly, so
+# devDependencies (tsx, typescript) MUST be installed (do not set
+# NODE_ENV=production before `npm ci`).
+#
+# BUILD CONTEXT = REPO ROOT. All paths below are relative to the monorepo root,
+# not to deploy/. Build with:
+#   docker build -f deploy/Dockerfile.worker -t goodfor/worker .
+#
+# The default CMD runs the read-plane poller, but every service is expected to
+# override it with its own npm script (see docker-compose.yml `command:`).
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:22-slim
+
+# ffmpeg is needed on PATH by the media/vision paths (keyframe + audio extract).
+# Clean the apt lists in the same layer to keep the image small.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ── Dependency layer (cache-friendly) ──────────────────────────────────────
+# Copy ONLY the manifests first so `npm ci` is cached and only re-runs when a
+# package.json or the lockfile changes — not on every source edit. npm needs
+# every workspace's package.json present to resolve the workspace graph.
+COPY package.json package-lock.json ./
+COPY apps/dashboard/package.json        ./apps/dashboard/
+COPY apps/worker-analyse/package.json   ./apps/worker-analyse/
+COPY apps/worker-attribute/package.json ./apps/worker-attribute/
+COPY apps/worker-creators/package.json  ./apps/worker-creators/
+COPY apps/worker-read/package.json      ./apps/worker-read/
+COPY apps/worker-write/package.json     ./apps/worker-write/
+COPY packages/asr/package.json          ./packages/asr/
+COPY packages/attribution/package.json  ./packages/attribution/
+COPY packages/briefs/package.json       ./packages/briefs/
+COPY packages/clustering/package.json   ./packages/clustering/
+COPY packages/compliance/package.json   ./packages/compliance/
+COPY packages/contracts/package.json    ./packages/contracts/
+COPY packages/creator-crm/package.json  ./packages/creator-crm/
+COPY packages/db/package.json           ./packages/db/
+COPY packages/embeddings/package.json   ./packages/embeddings/
+COPY packages/media/package.json        ./packages/media/
+COPY packages/publishing/package.json   ./packages/publishing/
+COPY packages/scoring/package.json      ./packages/scoring/
+COPY packages/tiktok-source/package.json ./packages/tiktok-source/
+COPY packages/vision/package.json       ./packages/vision/
+
+# Prefer the reproducible `npm ci`; fall back to `npm install` if the lockfile
+# is out of sync with the manifests (no lockfile determinism).
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+# ── Source layer ────────────────────────────────────────────────────────────
+# Everything else (apps/, packages/, scripts/, tsconfig, etc.). .dockerignore
+# keeps node_modules/.next/.env* etc. out of the context.
+COPY . .
+
+# Default = read-plane poller. Override per service in docker-compose.yml, e.g.
+#   command: npm run publish:tick      (worker-write)
+#   command: npm run attribute         (worker-attribute)
+#   command: npm run creators          (worker-creators)
+CMD ["npm", "run", "poll"]

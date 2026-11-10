@@ -1,0 +1,62 @@
+# Keep the Docker build context small and free of secrets / build output.
+# Everything here is excluded from `COPY . .` in the deploy/ Dockerfiles.
+
+# Dependencies — reinstalled inside the image via `npm ci`
+node_modules
+**/node_modules
+.pnpm-store
+
+# Secrets — never bake env files into an image (compose passes them at runtime).
+# The ** globs also catch nested per-app files like apps/worker-write/.env.local.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+env/
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# Build / cache output — regenerated in-image
+.next
+**/.next
+dist
+**/dist
+build
+out
+coverage
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Python sidecar venv — rebuilt in Dockerfile.analyse
+scripts/analysis/.venv
+**/__pycache__
+
+# Media cache — large extracted keyframes / audio, not needed to build
+media-cache
+*.mp4
+*.wav
+*.m4a
+
+# Logs & local scratch
+*.log
+tmp
+scratch
+
+# VCS & tooling
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Docker files themselves don't belong in the context
+docker-compose.yml
+deploy

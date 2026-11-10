@@ -1,0 +1,77 @@
+# syntax=docker/dockerfile:1
+# ─────────────────────────────────────────────────────────────────────────────
+# worker-analyse image = the worker base approach (Node 22 + ffmpeg + npm ci)
+# PLUS the Python 3.11 clustering/dedupe sidecar.
+#
+# This mirrors deploy/Dockerfile.worker step-for-step and adds Python, rather
+# than `FROM goodfor/worker`, so `docker compose build` needs no image-build
+# ordering — every image builds straight from node:22-slim.
+#
+# node:22-slim is Debian 12 "bookworm", whose system python3 is 3.11 — exactly
+# the interpreter the ML stack (numba via umap-learn/hdbscan) has wheels for.
+# The requirements.txt explicitly warns against 3.14, so pinning to bookworm's
+# 3.11 is the intended target.
+#
+# BUILD CONTEXT = REPO ROOT:
+#   docker build -f deploy/Dockerfile.analyse -t goodfor/worker-analyse .
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:22-slim
+
+# ffmpeg (media extraction) + Python 3.11 toolchain for the clustering venv.
+# build-essential + python3-dev are kept so any dependency without a prebuilt
+# wheel (e.g. pdqhash / hdbscan on some platforms) can compile from source.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-dev \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ── Python sidecar layer ────────────────────────────────────────────────────
+# Dedicated venv at /opt/venv (isolated from Debian's externally-managed
+# system Python, PEP 668). Copy just requirements.txt first so the heavy pip
+# install is cached independently of Node deps and app source.
+ENV PYTHON_VENV=/opt/venv
+ENV PYTHON_BIN=${PYTHON_VENV}/bin/python
+COPY scripts/analysis/requirements.txt ./scripts/analysis/requirements.txt
+RUN python3 -m venv "${PYTHON_VENV}" \
+    && "${PYTHON_VENV}/bin/pip" install --no-cache-dir --upgrade pip \
+    && "${PYTHON_VENV}/bin/pip" install --no-cache-dir -r scripts/analysis/requirements.txt
+# The clustering/dedupe providers read PYTHON_BIN (default 'python3'); point
+# them at the venv interpreter so numpy/umap/hdbscan/pdqhash resolve correctly.
+
+# ── Node dependency layer (cache-friendly, same as Dockerfile.worker) ───────
+COPY package.json package-lock.json ./
+COPY apps/dashboard/package.json        ./apps/dashboard/
+COPY apps/worker-analyse/package.json   ./apps/worker-analyse/
+COPY apps/worker-attribute/package.json ./apps/worker-attribute/
+COPY apps/worker-creators/package.json  ./apps/worker-creators/
+COPY apps/worker-read/package.json      ./apps/worker-read/
+COPY apps/worker-write/package.json     ./apps/worker-write/
+COPY packages/asr/package.json          ./packages/asr/
+COPY packages/attribution/package.json  ./packages/attribution/
+COPY packages/briefs/package.json       ./packages/briefs/
+COPY packages/clustering/package.json   ./packages/clustering/
+COPY packages/compliance/package.json   ./packages/compliance/
+COPY packages/contracts/package.json    ./packages/contracts/
+COPY packages/creator-crm/package.json  ./packages/creator-crm/
+COPY packages/db/package.json           ./packages/db/
+COPY packages/embeddings/package.json   ./packages/embeddings/
+COPY packages/media/package.json        ./packages/media/
+COPY packages/publishing/package.json   ./packages/publishing/
+COPY packages/scoring/package.json      ./packages/scoring/
+COPY packages/tiktok-source/package.json ./packages/tiktok-source/
+COPY packages/vision/package.json       ./packages/vision/
+
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+# ── Source layer ────────────────────────────────────────────────────────────
+COPY . .
+
+# Read-plane analysis worker: UMAP -> HDBSCAN clustering, ASR, dedupe.
+CMD ["npm", "run", "analyse"]

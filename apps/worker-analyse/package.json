@@ -1,0 +1,17 @@
+{
+  "name": "@goodfor/worker-analyse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@goodfor/db": "*",
+    "@goodfor/contracts": "*",
+    "@goodfor/media": "*",
+    "@goodfor/asr": "*",
+    "@goodfor/vision": "*",
+    "@goodfor/embeddings": "*",
+    "@goodfor/clustering": "*",
+    "@goodfor/tiktok-source": "*",
+    "dotenv": "^16.4.7"
+  }
+}

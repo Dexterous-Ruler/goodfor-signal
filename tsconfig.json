@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@goodfor/db": ["packages/db/src/index.ts"],
+      "@goodfor/scoring": ["packages/scoring/src/index.ts"],
+      "@goodfor/tiktok-source": ["packages/tiktok-source/src/index.ts"],
+      "@goodfor/contracts": ["packages/contracts/src/index.ts"],
+      "@goodfor/media": ["packages/media/src/index.ts"],
+      "@goodfor/asr": ["packages/asr/src/index.ts"],
+      "@goodfor/vision": ["packages/vision/src/index.ts"],
+      "@goodfor/embeddings": ["packages/embeddings/src/index.ts"],
+      "@goodfor/clustering": ["packages/clustering/src/index.ts"],
+      "@goodfor/publishing": ["packages/publishing/src/index.ts"],
+      "@goodfor/compliance": ["packages/compliance/src/index.ts"],
+      "@goodfor/briefs": ["packages/briefs/src/index.ts"],
+      "@goodfor/attribution": ["packages/attribution/src/index.ts"],
+      "@goodfor/creator-crm": ["packages/creator-crm/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*.ts", "apps/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

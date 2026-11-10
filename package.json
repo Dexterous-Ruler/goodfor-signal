@@ -1,0 +1,63 @@
+{
+  "name": "goodfor-tiktok",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "npm run dev --workspace @goodfor/dashboard",
+    "poll": "tsx apps/worker-read/src/tick.ts",
+    "poll:once": "tsx apps/worker-read/src/tick.ts --once",
+    "trends": "tsx apps/worker-read/src/trends.ts",
+    "trends:once": "tsx apps/worker-read/src/trends.ts --once",
+    "discover": "tsx apps/worker-read/src/creators.ts",
+    "discover:once": "tsx apps/worker-read/src/creators.ts --once",
+    "seed": "tsx apps/worker-read/src/seed.ts",
+    "demo": "tsx apps/worker-read/src/demo.ts",
+    "analyse": "tsx apps/worker-analyse/src/run.ts",
+    "analyse:once": "tsx apps/worker-analyse/src/run.ts --once",
+    "analyse:enqueue": "tsx apps/worker-analyse/src/run.ts --enqueue",
+    "analyse:refit": "tsx apps/worker-analyse/src/run.ts --refit",
+    "analyse:assign": "tsx apps/worker-analyse/src/run.ts --assign",
+    "analyse:poll-batch": "tsx apps/worker-analyse/src/run.ts --poll-batch",
+    "smoke": "tsx apps/worker-analyse/src/smoke.ts",
+    "publish:tick": "tsx apps/worker-write/src/tick.ts",
+    "publish:once": "tsx apps/worker-write/src/tick.ts --once",
+    "publish:oauth": "tsx apps/worker-write/src/oauth.ts",
+    "publish:reconcile": "tsx apps/worker-write/src/reconcile.ts",
+    "publish:health": "tsx apps/worker-write/src/health.ts",
+    "publish:refresh": "tsx apps/worker-write/src/token.ts --refresh",
+    "attribute": "tsx apps/worker-attribute/src/tick.ts",
+    "attribute:once": "tsx apps/worker-attribute/src/tick.ts --once",
+    "attribute:apple": "tsx apps/worker-attribute/src/apple-poll.ts",
+    "attribute:lift": "tsx apps/worker-attribute/src/lift-fit.ts",
+    "creators": "tsx apps/worker-creators/src/tick.ts",
+    "creators:once": "tsx apps/worker-creators/src/tick.ts --once",
+    "creators:discovery": "tsx apps/worker-creators/src/discovery.ts",
+    "creators:outreach": "tsx apps/worker-creators/src/outreach.ts",
+    "creators:licence-alerts": "tsx apps/worker-creators/src/licence-alerts.ts",
+    "db:types": "supabase gen types typescript --linked --schema public > packages/db/src/database.types.ts",
+    "db:push": "supabase db push --linked"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "dotenv": "^16.4.7",
+    "ws": "^8.18.0"
+  }
+}

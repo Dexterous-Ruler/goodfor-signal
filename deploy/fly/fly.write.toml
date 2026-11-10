@@ -1,0 +1,80 @@
+# fly.write.toml — Goodfor WRITE plane (publishing + attribution + creator CRM)
+#
+# Plane: WRITE. Clean, OAuth-authenticated, auditable. Holds the credentials
+# that MUST survive a read-plane takedown: TikTok Content Posting API client
+# secret, the KMS/token-encryption key, Kochava + App Store Connect attribution
+# keys, and the Modash/HypeAuditor/Business creator-CRM keys. This is a SEPARATE
+# Fly app from goodfor-signal-read — separate machines, separate secret vault,
+# separate egress IP. The write-plane boot guard (assertWritePlane, called in
+# every worker's deps.ts right after loadEnv) HARD-FAILS at boot if
+# ENSEMBLEDATA_TOKEN or SCRAPECREATORS_API_KEY are present.
+#
+# Houses the three write-plane workers as process groups in ONE app:
+#   worker-write (publish/reconcile/health), worker-attribute (attribute/apple),
+#   worker-creators (creators/outreach/licence). Write-plane workers stay
+#   together, never mixed with read-plane workers.
+#
+# Deploy from the REPO ROOT:
+#   fly deploy --config deploy/fly/fly.write.toml
+#
+# Secrets (docs/DEPLOY.md §2): TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET,
+#   TIKTOK_REDIRECT_URI, TIKTOK_SCOPES, TOKEN_ENCRYPTION_KEY,
+#   TIKTOK_BUSINESS_APP_ID, TIKTOK_BUSINESS_SECRET, KOCHAVA_API_KEY,
+#   KOCHAVA_APP_GUID, APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID,
+#   APP_STORE_CONNECT_PRIVATE_KEY, MODASH_API_KEY, MODASH_BASE_URL,
+#   HYPEAUDITOR_API_TOKEN, HYPEAUDITOR_BASE_URL, TIKTOK_DM_ACCESS_TOKEN,
+#   OUTREACH_EMAIL_API_KEY, TIKTOK_BUSINESS_ACCESS_TOKEN, SUPABASE_URL,
+#   SUPABASE_SERVICE_ROLE_KEY.  NEVER set ENSEMBLEDATA_TOKEN / SCRAPECREATORS_API_KEY here.
+
+app            = "goodfor-signal-write"
+primary_region = "iad"
+
+# Loops trap SIGINT — let the in-flight publish/attribution tick finish and the
+# advisory token-refresh lock release before the machine dies.
+kill_signal  = "SIGINT"
+kill_timeout = "30s"
+
+[build]
+  # Built by the parallel Dockerfile task. Node-only (tsx) — no Python, no ffmpeg.
+  dockerfile = "deploy/Dockerfile.worker"
+
+[env]
+  NODE_ENV = "production"
+
+# Process groups. publish/attribute/creators are always-on 60s loops (count=1).
+# The reconcile/health/apple/outreach/licence groups are ONE-SHOT cron jobs that
+# exit 0 — run them as SCHEDULED machines (scaled to 0 always-on), never as
+# restart-looping daemons (reconcile would hammer TikTok; health would hammer
+# the DB). See docs/DEPLOY.md §6.
+#
+# ANTI-SPAM / ONE-POSTING-SYSTEM-PER-ACCOUNT: `publish` MUST stay at exactly one
+# instance. Two publishers race the anti-spam governor (=12 posts/account/24h,
+# =4 in-flight) and double-post. NEVER scale `publish` above 1.
+[processes]
+  publish           = "npm run publish:tick"            # 60s draft/inbox publisher — EXACTLY ONE instance
+  reconcile         = "npm run publish:reconcile"       # publish-id reconcile — scheduled one-shot
+  health            = "npm run publish:health"          # account-health probe — scheduled one-shot
+  token-refresh     = "npm run publish:refresh"         # OAuth token rotation — scheduled one-shot, run ~2×/day; WITHOUT it access/refresh tokens expire and publish+reconcile fail ~24h after onboarding
+  attribute         = "npm run attribute"               # 60s attribution ingest loop
+  attribute-apple   = "npm run attribute:apple"         # Apple Analytics control total — scheduled one-shot
+  creators          = "npm run creators"                # 60s creator-CRM loop
+  creators-outreach = "npm run creators:outreach"       # DM/email cadence — scheduled one-shot
+  creators-licence  = "npm run creators:licence-alerts" # licence-expiry alerts — scheduled one-shot
+
+# All write-plane workers are network-bound and light. If publish throughput or
+# attribution volume climbs, bump this group's memory rather than count (see the
+# per-instance caveat above for `publish`).
+[[vm]]
+  size      = "shared-cpu-1x"
+  memory    = "512mb"
+  processes = [
+    "publish",
+    "reconcile",
+    "health",
+    "token-refresh",
+    "attribute",
+    "attribute-apple",
+    "creators",
+    "creators-outreach",
+    "creators-licence",
+  ]

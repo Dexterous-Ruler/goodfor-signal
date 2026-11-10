@@ -1,0 +1,143 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Goodfor TikTok — local "all-up" stack.
+#
+#   docker compose up --build
+#
+# ── PLANE ISOLATION (load-bearing) ─────────────────────────────────────────
+# The two worker planes are kept in SEPARATE processes with SEPARATE secret
+# sets. Boot guards in each worker refuse to start if the wrong secrets are
+# present, so the env_file split below is not cosmetic — it is enforced.
+#
+#   READ plane  (worker-read, worker-analyse):
+#       gets ENSEMBLEDATA_TOKEN / SCRAPECREATORS + GROQ/GEMINI/OPENAI + SUPABASE_*
+#       must NOT get TIKTOK_CLIENT_SECRET / TOKEN_ENCRYPTION_KEY
+#       -> env_file: env/read.env
+#
+#   WRITE plane (worker-write, worker-attribute, worker-creators):
+#       gets TIKTOK_* / TOKEN_ENCRYPTION_KEY / KOCHAVA_* / APP_STORE_CONNECT_* /
+#            MODASH_* / HYPEAUDITOR_* + SUPABASE_*
+#       must NOT get ENSEMBLEDATA_TOKEN / SCRAPECREATORS
+#       -> env_file: env/write.env
+#
+#   DASHBOARD: read-only console, SUPABASE_* only
+#       -> env_file: env/dashboard.env
+#
+# The two planes share ONLY the Supabase Postgres (external) and this local
+# Redis queue.
+#
+# ── SECRET FILES (you create these; they are gitignored, NOT in this repo) ──
+# Copy .env.example and split it into three plane-scoped files:
+#     env/read.env        env/write.env        env/dashboard.env
+# Put ONLY that plane's permitted vars in each file. They are referenced here,
+# never created by this compose file.
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+  # ── Shared infrastructure ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Dashboard — Next.js read-only console (SUPABASE_* only) ───────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dashboard
+    image: goodfor/dashboard
+    restart: unless-stopped
+    env_file:
+      - env/dashboard.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ═════════════════════════════ READ PLANE ════════════════════════════════
+  # env_file: env/read.env  —  competitor data + AI keys, NO TikTok write creds
+  # ──────────────────────────────────────────────────────────────────────────
+  worker-read:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    image: goodfor/worker
+    restart: unless-stopped
+    command: npm run poll          # apps/worker-read/src/tick.ts
+    env_file:
+      - env/read.env
+    environment:
+      - REDIS_URL=redis://redis:6379   # override to the compose service
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker-analyse:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.analyse   # worker base + Python 3.11 sidecar
+    image: goodfor/worker-analyse
+    restart: unless-stopped
+    command: npm run analyse       # apps/worker-analyse/src/run.ts
+    env_file:
+      - env/read.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ════════════════════════════ WRITE PLANE ════════════════════════════════
+  # env_file: env/write.env  —  TikTok write creds + token encryption, NO
+  # ENSEMBLEDATA/SCRAPECREATORS read-plane keys
+  # ──────────────────────────────────────────────────────────────────────────
+  worker-write:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    image: goodfor/worker
+    restart: unless-stopped
+    command: npm run publish:tick  # apps/worker-write/src/tick.ts
+    env_file:
+      - env/write.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker-attribute:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    image: goodfor/worker
+    restart: unless-stopped
+    command: npm run attribute     # apps/worker-attribute/src/tick.ts
+    env_file:
+      - env/write.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker-creators:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    image: goodfor/worker
+    restart: unless-stopped
+    command: npm run creators      # apps/worker-creators/src/tick.ts
+    env_file:
+      - env/write.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy

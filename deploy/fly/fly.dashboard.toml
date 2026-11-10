@@ -1,0 +1,48 @@
+# fly.dashboard.toml — Goodfor read-only console (Next.js 15)
+#
+# Plane: READ (surface only). This app NEVER holds write-plane secrets and
+# NEVER holds the vendor read-plane tokens either — it only reads the shared
+# Supabase Postgres to render alerts/trends/accounts/formats. See docs/DEPLOY.md.
+#
+# Deploy from the REPO ROOT so the Docker build context is the whole monorepo:
+#   fly deploy --config deploy/fly/fly.dashboard.toml
+#
+# Secrets (set once, see docs/DEPLOY.md §2): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+
+app            = "goodfor-signal-dashboard"
+primary_region = "iad"
+
+[build]
+  # Built by the parallel Dockerfile task. Runs `next build` then `next start`.
+  dockerfile = "deploy/Dockerfile.dashboard"
+
+[env]
+  NODE_ENV = "production"
+  PORT     = "3000"
+
+# Single web process. The Dockerfile's `next build` runs at image build time;
+# this command boots the compiled server.
+[processes]
+  app = "npm run start --workspace @goodfor/dashboard"
+
+[http_service]
+  internal_port       = 3000
+  force_https         = true
+  auto_stop_machines  = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes           = ["app"]
+
+  # Health check hits the data-layer probe. GET /api/status returns 200 with
+  # head counts for both planes when the DB is reachable, 500 otherwise.
+  [[http_service.checks]]
+    interval     = "30s"
+    timeout      = "5s"
+    grace_period = "15s"
+    method       = "GET"
+    path         = "/api/status"
+
+[[vm]]
+  size      = "shared-cpu-1x"
+  memory    = "1gb"
+  processes = ["app"]

@@ -1,0 +1,12 @@
+{
+  "name": "@goodfor/worker-read",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@goodfor/db": "*",
+    "@goodfor/scoring": "*",
+    "@goodfor/tiktok-source": "*",
+    "dotenv": "^16.4.7"
+  }
+}
